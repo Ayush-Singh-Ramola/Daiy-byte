@@ -11,4 +11,12 @@ export default defineConfig({
       include: '**/*.{jsx,tsx}',
     }),
   ],
+  server: {
+    proxy: {
+      '/api': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+      },
+    },
+  },
 })

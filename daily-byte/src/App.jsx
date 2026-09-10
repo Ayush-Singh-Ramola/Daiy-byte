@@ -6,6 +6,7 @@ import {
   LayoutGrid, Newspaper, Users, FileText, Settings, LogOut, Plus, Trash2,
   Copy as CopyIcon, Eye, Share2, Bookmark, Mail, Check
 } from "lucide-react";
+import heroImage from "./assets/hero.png";
 
 /* ============================================================
    DESIGN TOKENS
@@ -707,15 +708,37 @@ function Footer({ onNav }) {
 function SubscribeBlock({ onSubscribed }) {
   const [email, setEmail] = useState("");
   const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
-  const submit = (e) => {
+  const submit = async (e) => {
     e.preventDefault();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       setError("That doesn't look like a valid email address.");
       return;
     }
+
     setError("");
-    onSubscribed(email);
+    setSubmitting(true);
+
+    try {
+      const response = await fetch("/api/subscribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(data.error || "Unable to subscribe right now.");
+      }
+
+      onSubscribed(email);
+    } catch (submitError) {
+      setError(submitError.message || "Unable to subscribe right now.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -741,10 +764,11 @@ function SubscribeBlock({ onSubscribed }) {
             />
             <button
               type="submit"
-              style={{ ...sans, background: COLORS.accent, color: COLORS.paper }}
+              disabled={submitting}
+              style={{ ...sans, background: COLORS.accent, color: COLORS.paper, opacity: submitting ? 0.7 : 1 }}
               className="px-6 py-3.5 text-[14px] font-medium shrink-0"
             >
-              Subscribe
+              {submitting ? "Subscribing..." : "Subscribe"}
             </button>
           </div>
           {error && <p style={{ ...sans, color: "#E7A6A6" }} className="text-[12.5px] mt-2">{error}</p>}
@@ -934,8 +958,15 @@ function StoryPage({ slug, onOpenStory, onNav, stories }) {
           {/* photo + intro, two columns like the reference page */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 py-9">
             <div>
-              <div style={{ filter: "sepia(0.15) contrast(1.03)", boxShadow: "6px 6px 0 rgba(20,18,16,0.08)" }}>
-                <EditorialArt category={story.category} ratio="4/3" />
+              <div
+                style={{ boxShadow: "6px 6px 0 rgba(20,18,16,0.08)" }}
+                className="overflow-hidden border border-[var(--ink)]"
+              >
+                <img
+                  src={heroImage}
+                  alt={story.title}
+                  className="block w-full h-auto object-cover"
+                />
               </div>
               <p style={{ ...serif, color: COLORS.inkSoft }} className="italic text-[13px] mt-3 text-center">
                 A visual representation of the ideas discussed in this story.
@@ -1424,35 +1455,51 @@ function AdminStoryEditor({ onNav }) {
 }
 
 function AdminSubscribers({ onNav }) {
-  const rows = [
-    ["j.hendricks@mailbox.com", "Active", "Aug 2, 2026"],
-    ["priya.k@workmail.io", "Active", "Aug 4, 2026"],
-    ["trentonwrites@proton.me", "Active", "Aug 9, 2026"],
-    ["a.nakamura@studio.dev", "Pending", "Sept 9, 2026"],
-    ["morgan.b@fieldnote.co", "Active", "July 30, 2026"],
-  ];
+  const [rows, setRows] = useState([]);
+  const [stats, setStats] = useState({ total: 0, active: 0, pending: 0 });
+
+  useEffect(() => {
+    const loadSubscribers = async () => {
+      try {
+        const response = await fetch("/api/subscribers");
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          throw new Error(data.error || "Failed to load subscribers.");
+        }
+
+        setRows(data.subscribers || []);
+        setStats(data.stats || { total: 0, active: 0, pending: 0 });
+      } catch (error) {
+        console.error(error);
+      }
+    };
+
+    loadSubscribers();
+  }, []);
+
   return (
     <AdminShell page="admin-subscribers" onNav={onNav}>
       <h1 style={{ ...serif, color: COLORS.ink }} className="text-[28px] mb-8">Subscribers</h1>
       <div className="grid grid-cols-3 gap-4 mb-8 max-w-lg">
-        <StatCard label="Total" value="12,482" />
-        <StatCard label="Active" value="11,960" />
-        <StatCard label="Pending" value="522" />
+        <StatCard label="Total" value={stats.total.toLocaleString()} />
+        <StatCard label="Active" value={stats.active.toLocaleString()} />
+        <StatCard label="Pending" value={stats.pending.toLocaleString()} />
       </div>
       <table className="w-full" style={sans}>
         <thead>
           <tr style={{ borderBottom: `1px solid ${COLORS.ink}` }}>
-            {["Email", "Status", "Subscribed"].map((h) => (
+            {['Email', 'Status', 'Subscribed'].map((h) => (
               <th key={h} style={{ color: COLORS.muted }} className="text-left text-[11px] uppercase tracking-[0.08em] pb-2 font-medium">{h}</th>
             ))}
           </tr>
         </thead>
         <tbody>
           {rows.map((r) => (
-            <tr key={r[0]} style={{ borderBottom: `1px solid ${COLORS.border}` }}>
-              <td style={{ color: COLORS.ink }} className="text-[13.5px] py-3">{r[0]}</td>
-              <td style={{ color: r[1] === "Active" ? COLORS.accent : COLORS.muted }} className="text-[13px] py-3">{r[1]}</td>
-              <td style={{ color: COLORS.muted }} className="text-[13px] py-3">{r[2]}</td>
+            <tr key={r.email} style={{ borderBottom: `1px solid ${COLORS.border}` }}>
+              <td style={{ color: COLORS.ink }} className="text-[13.5px] py-3">{r.email}</td>
+              <td style={{ color: r.status === 'Active' ? COLORS.accent : COLORS.muted }} className="text-[13px] py-3">{r.status}</td>
+              <td style={{ color: COLORS.muted }} className="text-[13px] py-3">{new Date(r.subscribedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</td>
             </tr>
           ))}
         </tbody>
@@ -1500,6 +1547,9 @@ function AdminIssueEditor({ onNav }) {
   const [showPicker, setShowPicker] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [published, setPublished] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState("");
+  const [sendSuccess, setSendSuccess] = useState("");
 
   const addBlock = (type) => {
     setBlocks((b) => [...b, { id: Date.now(), type, detail: "Untitled block" }]);
@@ -1518,6 +1568,42 @@ function AdminIssueEditor({ onNav }) {
     const next = [...blocks];
     [next[idx], next[swap]] = [next[swap], next[idx]];
     setBlocks(next);
+  };
+
+  const handlePublish = async () => {
+    setSending(true);
+    setSendError("");
+    setSendSuccess("");
+
+    try {
+      const response = await fetch("/api/send-newsletter", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          subject: "Daily Byte Issue #043",
+          preview: "AI is quietly changing software work, startups are going lean, and boring tech is back.",
+        }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to send the newsletter.");
+      }
+
+      const recipientText = data.recipients?.length ? data.recipients.length : 0;
+      setSendSuccess(
+        data.demoMode
+          ? `Demo newsletter queued for ${recipientText} recipient${recipientText === 1 ? '' : 's'}.`
+          : `Newsletter sent to ${recipientText} recipient${recipientText === 1 ? '' : 's'}.`,
+      );
+      setConfirming(false);
+      setPublished(true);
+    } catch (error) {
+      setSendError(error.message || "Failed to send the newsletter.");
+    } finally {
+      setSending(false);
+    }
   };
 
   if (published) {
@@ -1605,14 +1691,20 @@ function AdminIssueEditor({ onNav }) {
             <p style={{ ...sans, color: COLORS.inkSoft }} className="text-[14px] leading-relaxed mb-6">
               This will send the newsletter to 12,482 active subscribers. This cannot be undone.
             </p>
+            {sendError && (
+              <p style={{ ...sans, color: COLORS.accent }} className="text-[12px] mb-4">
+                {sendError}
+              </p>
+            )}
             <div className="flex justify-end gap-3">
               <button onClick={() => setConfirming(false)} style={{ ...sans, color: COLORS.inkSoft }} className="text-[13px] px-4 py-2">Cancel</button>
               <button
-                onClick={() => { setConfirming(false); setPublished(true); }}
-                style={{ ...sans, background: COLORS.accent, color: COLORS.paper }}
+                onClick={handlePublish}
+                disabled={sending}
+                style={{ ...sans, background: COLORS.accent, color: COLORS.paper, opacity: sending ? 0.7 : 1 }}
                 className="text-[13px] px-4 py-2"
               >
-                Publish &amp; send
+                {sending ? "Sending..." : "Publish & send"}
               </button>
             </div>
           </div>
